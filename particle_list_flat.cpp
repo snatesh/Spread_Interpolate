@@ -52,34 +52,42 @@ inline unsigned int const at(unsigned int i, unsigned int j,unsigned int k,\
 // flatted index into 3D array, corrected for periodic boundaries
 inline unsigned int const pbat(int i, int j, int k, const int Nx, const int Ny)
 {
-  i = (i >= 0 && i < Nx ? i : (i < 0 ? Nx + i : i - Nx)); 
-  j = (j >= 0 && j < Ny ? j : (j < 0 ? Ny + j : j - Ny)); 
+  if (i < 0) i = Nx + i; else if (i >= Nx) i = i - Nx; 
+  if (j < 0) j = Ny + j; else if (j >= Ny) j = j - Ny; 
   return i + Nx * (j + Ny * k);
 }
 
+// flatted index into 3D array, corrected for periodic boundaries
+inline unsigned int const pbat(int i, int j, int k, const int Nx, const int Ny, const int Nz)
+{
+  if (i < 0) i = Nx + i; else if (i >= Nx) i = i - Nx; 
+  if (j < 0) j = Ny + j; else if (j >= Ny) j = j - Ny; 
+  if (k < 0) k = Nz + k; else if (k >= Nz) k = k - Nz;
+  return i + Nx * (j + Ny * k);
+}
 
 
 // gather data from src at inds into trg
 inline void gather(unsigned int N, double* trg, double const* src, const unsigned int* inds)
 {
+  #pragma omp simd
   for (unsigned int i = 0; i < N; ++i) 
   {
-    for (unsigned int j = 0; j < 3; ++j)  
-    {
-      trg[j + 3 * i] = src[j + 3 * inds[i]];
-    }
+    trg[3 * i] = src[3 * inds[i]];
+    trg[1 + 3 * i] = src[1 + 3 * inds[i]];
+    trg[2 + 3 * i] = src[2 + 3 * inds[i]];
   }
 }
 
 // scatter data from trg at inds into src
 inline void scatter(unsigned int N, double const* trg, double* src, const unsigned int* inds)
 {
+  #pragma omp simd
   for (unsigned int i = 0; i < N; ++i) 
   {
-    for (unsigned int j = 0; j < 3; ++j)
-    {
-      src[j + 3 * inds[i]] = trg[j + 3 * i];
-    }
+    src[3 * inds[i]] = trg[3 * i];
+    src[1 + 3 * inds[i]] = trg[1 + 3 * i];
+    src[2 + 3 * inds[i]] = trg[2 + 3 * i];
   }
 }
 
@@ -128,19 +136,196 @@ void write_coords(const unsigned int N, const double h, const char* fname)
   }
 } 
 
+void init(const unsigned Np, const int N, const double h, double* xp, double* fl, double* Fe, 
+          int* firstn, int* nextn, unsigned int* number)
+{
+  // initialize
+  #pragma omp parallel
+  {
+    #pragma omp for nowait
+    for (unsigned int i = 0; i < Np; ++i) nextn[i] = -1; 
+    #pragma omp for nowait
+    for (unsigned int i = 0; i < N * N; ++i) { firstn[i] = -1; number[i] = 0;}
+    #pragma omp for
+    for (unsigned int i = 0; i < N * N * N * 3; ++i) Fe[i] = 0;
+  }
+  
+  // populate particle positions and fill firstn and nextn (no need to parallelize)
+  int ii,jj,ind,indn;
+  for (unsigned int i = 0; i < Np; ++i) 
+  {
+    // particles uniformly distributed in [2h,h(N-1)-2h]^3
+    for (unsigned int j = 0; j < 3; ++j)
+    {
+      //drand48() * h * (N-1)
+      xp[j + 3 * i] = 3 * h + (h * (N-1) - 6 * h) * drand48(); 
+      fl[j + 3 * i] = 2 * drand48() - 1;
+    }
+    fl[1 + 3 *i] = fl[2 + 3*i] = 0;
+    //xp[2 + 3 * i] = 3 * h + (h * (N-1) - 6 * h) * drand48(); //N * h / 2 + ((double) 6 * i * h); 
+    ii = (int) xp[3 * i] / h; jj = (int) xp[1 + 3 * i] / h; ind = jj + ii * N;
+    if (firstn[ind] < 0) { firstn[ind] = i;}
+    else
+    {
+      indn = firstn[ind];
+      while (nextn[indn] >= 0)
+      {
+        indn = nextn[indn];
+      }
+      nextn[indn] = i;
+    }
+    number[ind] += 1;
+  }
+}
+
+void spread_interp(double* xp, double* fl, double* Fe, int* firstn, 
+                   int* nextn, unsigned int* number, const unsigned short w, 
+                   const double h, const unsigned short N, const bool mode)
+{
+  const double weight = (mode ? 1 : h * h * h);
+  const unsigned short w2 = w * w; const unsigned int N2 = N * N; 
+  // loop over w^2 groups of columns
+  for (unsigned int izero = 0; izero < w; ++izero)
+  {
+    for (unsigned int jzero = 0; jzero < w; ++jzero)
+    {
+      // parallelize over the N^2/w^2 columns in a group
+      //#pragma omp parallel for
+      for (unsigned int ijcount = 0; ijcount < N2/w2; ++ijcount)
+      {
+        // column indices
+        unsigned int jj = jzero + w * (ijcount / (N / w));
+        unsigned int ii = izero + w * (ijcount % (N / w));
+        
+        // find first particle in column(ii,jj) and continue if it's there
+        int l = firstn[jj + ii * N];
+        if (l >= 0 )
+        {
+          // global indices of w x w x N subarray influenced column(i,j)
+          ALIGN unsigned int indc3D[w2 * N];
+          for (int i = 0; i < w; ++i) 
+          {
+            int i3D = ii + i - w/2 + 1;
+            for (int j = 0; j < w; ++j)
+            {
+              int j3D = jj + j - w/2 + 1;
+              for (int k3D = 0; k3D < N; ++k3D)
+              {
+                indc3D[at(i,j,k3D,w,w)] = pbat(i3D,j3D,k3D,N,N);
+              }
+            }
+          }
+          
+          // gather eulerian foces for one column into contig mem Fec
+          ALIGN double Fec[w2 * N * 3];  
+          gather(w2 * N, Fec, Fe, indc3D);
+          
+          // number of pts in this column, particle indices
+          unsigned int npts = number[jj + ii * N], indx[npts];
+          for (unsigned int ipt = 0; ipt < npts; ++ipt) {indx[ipt] = l; l = nextn[l];}
+          
+          // gather lagrangian pts and forces into xpc and flc
+          ALIGN double xpc[npts * 3]; 
+          ALIGN double flc[npts * 3]; 
+          gather(npts, xpc, xp, indx);
+          gather(npts, flc, fl, indx);
+          //for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
+          // get the kernel w x w x w kernel weights for each particle in col 
+          ALIGN double delta[w2 * w * npts];
+          for (int j = 0; j < w; ++j)
+          {
+            // unwrapped y coordinates
+            double fj = ((double) jj + j - w/2 + 1) * h;
+            for (int i = 0; i < w; ++i)
+            {
+              // unwrapped x coordinates
+              double fi = ((double) ii + i - w/2 + 1) * h;
+              for (int k = 0; k < w; ++k)
+              {
+                unsigned int m = at(i,j,k,w,w);
+                #pragma omp simd // vectorization over particles in col
+                for (unsigned int ipt = 0; ipt < npts; ++ipt) 
+                {
+                  // unwrapped z coordinates
+                  double fk = (double) (((int)xpc[2 + 3 * ipt] / h) + k - w/2 + 1) * h;
+                  // kernel weights 
+                  delta[ipt + m * npts] = deltaf(xpc[3 * ipt] - fi, \
+                                                 xpc[1 + 3 * ipt] - fj, \
+                                                 xpc[2 + 3 * ipt] - fk) * weight;  
+
+                }
+              }
+            }
+          }
+  
+          if (mode)
+          {         
+            // update Eulerian density
+            int offset1 = w2 * N;
+            for (unsigned int ipt = 0; ipt < npts; ++ipt)
+            {
+              int m0 = ((int) xpc[2 + 3 * ipt] / h - w/2 + 1);
+              int offset0 = w2 * m0;
+              #pragma omp simd // vectorize over eulerian pts
+              for (int i = 0; i < w2 * w; ++i)
+              {
+                int k = i / w2 + m0, ic = i + offset0;
+                if (k < 0) ic = i + offset0 + offset1;
+                if (k >= N) ic = i + offset0 - offset1;
+                Fec[3 * ic] += delta[ipt + i * npts] * flc[3 * ipt]; 
+                Fec[1 + 3 * ic] += delta[ipt + i * npts] * flc[1 + 3 * ipt]; 
+                Fec[2 + 3 * ic] += delta[ipt + i * npts] * flc[2 + 3 * ipt]; 
+              }
+            }
+            ///for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
+            // scatter back to global eulerian grid
+            scatter(w2 * N, Fec, Fe, indc3D);
+          } 
+          else
+          {
+            // interpolate lagrangian density
+            int offset1 = w2 * N;
+            for (int i = 0; i < w2 * w; ++i)
+            {
+              #pragma omp simd // vectorize over lagrangian pts 
+              for (unsigned int ipt = 0; ipt < npts; ++ipt)
+              {
+                int m0 = ((int) xpc[2 + 3 * ipt] / h - w/2 + 1);
+                int offset0 = w2 * m0;
+                int k = i / w2 + m0, ic = i + offset0;
+                if (k < 0) ic = i + offset0 + offset1;
+                if (k >= N) ic = i + offset0 - offset1;
+                // TODO: figure why off by constant factor
+                flc[ipt] +=   10.366999827567939 * Fec[3 * ic] * delta[ipt + i * npts]; 
+                flc[1 + 3 * ipt] +=  10.366999827567939 * Fec[1 + 3 * ic] * delta[ipt + i * npts]; 
+                flc[2 + 3 * ipt] +=   10.366999827567939 * Fec[2 + 3 * ic] * delta[ipt + i * npts]; 
+              }
+            }   
+            //for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
+            // scatter back to global lagrangian grid
+            scatter(npts, flc, fl, indx);
+          }
+        } 
+      // go to next column in group
+      } 
+    // go to next group
+    }
+  }
+}    
+
+
 int main(int argc, char* argv[])
 {
-  bool write = false;
+  // spreading width, num uniform pts on each axis, num particles
+  const unsigned short w = 6, N = w * ((int) 64 / w); const int Np = 10;
+  // grid spacing, num total columns
+  const double h = 1; const unsigned int N2 = N * N;
+  
+  const bool write = true;
   std::cout << setw(3) << "NT" << setw(16) << "Time (s)" << std::endl;
-  for (unsigned int nthread = 1; nthread <= 12; ++nthread)
+  for (unsigned int nthread = 12; nthread <= 12; ++nthread)
   {
     omp_set_num_threads(nthread);
-    // spreading width, num groups of columns of 3D mesh,
-    // num uniform pts on each axis, num particles
-    const unsigned short w = 6, w2 = w * w, N = w * ((int) 216 / w); const int Np = 200000;
-
-    // grid spacing, num total columns on 3D mesh
-    const double h = 0.5; const unsigned int N2 = N * N;
 
     // particle positions (x1,y1,z1,x2,y2,z2,...)
     double* xp = (double*) aligned_malloc(Np * 3 * sizeof(double));
@@ -160,149 +345,30 @@ int main(int argc, char* argv[])
     // nextn(i) to hold index of the next particle in the column with particle i
     int* nextn = (int*) aligned_malloc(Np * sizeof(int));
 
-    // initialize
-    #pragma omp parallel
-    {
-      #pragma omp for nowait
-      for (unsigned int i = 0; i < Np; ++i) nextn[i] = -1; 
-      #pragma omp for nowait
-      for (unsigned int i = 0; i < N2; ++i) { firstn[i] = -1; number[i] = 0;}
-      #pragma omp for
-      for (unsigned int i = 0; i < N2 * N * 3; ++i) Fe[i] = 0;
-    }
-    
-    // populate particle positions and fill firstn and nextn (no need to parallelize)
-    int ii,jj,ind,indn;
-    for (unsigned int i = 0; i < Np; ++i) 
-    {
-      // particles uniformly distributed in [2h,h(N-1)-2h]^3
-      for (unsigned int j = 0; j < 3; ++j)
-      {
-        //drand48() * h * (N-1)
-        xp[j + 3 * i] = 3 * h + (h * (N-1) - 6 * h) * drand48(); //N * h / 2 + ((double) 6 * i * h); 
-        fl[j + 3 * i] = 2 * drand48() - 1;
-      } 
-      ii = (int) xp[3 * i] / h; jj = (int) xp[1 + 3 * i] / h; ind = jj + ii * N;
-      if (firstn[ind] < 0) { firstn[ind] = i;}
-      else
-      {
-        indn = firstn[ind];
-        while (nextn[indn] >= 0)
-        {
-          indn = nextn[indn];
-        }
-        nextn[indn] = i;
-      }
-      number[ind] += 1;
-    }
+    init(Np, N, h, xp, fl, Fe, firstn, nextn, number);
+
     if (write) write_to_file(xp, Np, "particles.txt"); 
-    
-    
-    // loop over w^2 groups of columns
+   
     double time = omp_get_wtime(); 
-    for (unsigned int izero = 0; izero < w; ++izero)
-    {
-      for (unsigned int jzero = 0; jzero < w; ++jzero)
-      {
-        // parallelize over the N^2/w^2 columns in a group
-        #pragma omp parallel for
-        for (unsigned int ijcount = 0; ijcount < N2/w2; ++ijcount)
-        {
-          // column indices
-          unsigned int jj = jzero + w * (ijcount / (N / w));
-          unsigned int ii = izero + w * (ijcount % (N / w));
-          
-          // find first particle in column(ii,jj) and continue if it's there
-          int l = firstn[jj + ii * N];
-          if (l >= 0 )
-          {
-            // global indices of w x w x N subarray influenced column(i,j)
-            ALIGN unsigned int indc3D[w2 * N];
-            for (int i = 0; i < w; ++i) 
-            {
-              int i3D = ii + i - w/2 + 1;
-              for (int j = 0; j < w; ++j)
-              {
-                int j3D = jj + j - w/2 + 1;
-                for (int k3D = 0; k3D < N; ++k3D)
-                {
-                  indc3D[at(i,j,k3D,w,w)] = pbat(i3D,j3D,k3D,N,N);
-                }
-              }
-            }
-            
-            // gather eulerian foces for one column into contig mem Fec
-            ALIGN double Fec[w2 * N * 3];  
-            gather(w2 * N, Fec, Fe, indc3D);
-            
-            // number of pts in this column, particle indices
-            unsigned int npts = number[jj + ii * N], indx[npts];
-            for (unsigned int ipt = 0; ipt < npts; ++ipt) {indx[ipt] = l; l = nextn[l];}
-            
-            // gather lagrangian pts and forces into xpc and flc
-            ALIGN double xpc[npts * 3]; 
-            ALIGN double flc[npts * 3]; 
-            gather(npts, xpc, xp, indx);
-            gather(npts, flc, fl, indx);
-            
-            // get the kernel w x w x w kernel weights for each particle in col 
-            ALIGN double delta[w2 * w * npts];
-            for (int j = 0; j < w; ++j)
-            {
-              // unwrapped y coordinates
-              double fj = ((double) jj + j - w/2 + 1) * h;
-              for (int i = 0; i < w; ++i)
-              {
-                // unwrapped x coordinates
-                double fi = ((double) ii + i - w/2 + 1) * h;
-                for (int k = 0; k < w; ++k)
-                {
-                  unsigned int m = at(i,j,k,w,w);
-                  #pragma omp simd // vectorization over particles in col
-                  for (unsigned int ipt = 0; ipt < npts; ++ipt) 
-                  {
-                    // unwrapped z coordinates
-                    double fk = (double) (((int)xpc[2 + 3 * ipt] / h) + k - w/2 + 1) * h;
-                    // kernel weights 
-                    delta[m + ipt * npts] = deltaf(xpc[3 * ipt] - fi, \
-                                                   xpc[1 + 3 * ipt] - fj, \
-                                                   xpc[2 + 3 * ipt] - fk);  
-                  }
-                }
-              }
-            }
-            
-            // update Eulerian force density
-            for (unsigned int ipt = 0; ipt < npts; ++ipt)
-            {
-              int mzero = w2 * ((int) xpc[2 + 3 * ipt] / h - w/2 + 1);
-              //mzero = (mzero >= 0 && mzero < w2 * N ? mzero : (mzero < 0 ? w2 * N + mzero : mzero - w2 * N)); 
-              //printf("%d\n",mzero);
-              #pragma omp simd // vectorization over eulerian pts around particle
-              for (int m = 0; m < w2 * w; ++m)
-              {
-                Fec[3 * (m + mzero)] += delta[m + ipt * npts] * flc[3 * ipt];
-                Fec[1 + 3 * (m + mzero)] += delta[m + ipt * npts] * flc[1 + 3 * ipt];
-                Fec[2 + 3 * (m + mzero)] += delta[m + ipt * npts] * flc[2 + 3 * ipt];
-              }
-            }
-            
-            // scatter back to global eulerian grid
-            scatter(w2 * N, Fec, Fe, indc3D);
-          } 
-        // go to next column in group
-        } 
-      // go to next group
-      }
-    }
-    
-    //std::cout << omp_get_wtime() -time << std::endl;
-    std::cout << setw(3) << nthread << setw(16) << omp_get_wtime() - time << std::endl;
+    spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, true);
+  //  std::cout << setw(3) << nthread << setw(16) << omp_get_wtime() - time;
 
     if (write)
     { write_to_file(Fe, N2 * N, "spread.txt"); 
       write_coords(N,h,"coords.txt");
+      write_to_file(fl, Np, "forces.txt");
     }
+    
+    // reinitialize force for interp
+    #pragma omp parallel for
+    for (unsigned int i = 0; i < Np * 3; ++i) fl[i] = 0;
+
+    time = omp_get_wtime();
+    spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, false);
+ //   std::cout << setw(16) << omp_get_wtime() - time << std::endl;
+    
+    if (write) write_to_file(fl, Np, "interp.txt"); 
+ 
     aligned_free(xp);
     aligned_free(fl);
     aligned_free(firstn);
@@ -313,22 +379,4 @@ int main(int argc, char* argv[])
 }
 
  
-  // test the sorting of particles into columns done above
-  //for (unsigned int ii = 0; ii < N; ++ii)
-  //{
-  //  for (unsigned int jj = 0; jj < N; ++jj)
-  //  {
-  //    ind = jj + ii * N; indn = firstn[ind];
-  //    if (indn >= 0)
-  //    {
-  //      printf("N = %d\n",number[ind]);
-  //      printf("%lf\t%lf\t%lf\n",xp[3 * indn],xp[1 + 3 * indn],xp[2 + 3 * indn]);
-  //      while (nextn[indn] > -1)
-  //      {
-  //        printf("%lf\t%lf\t%lf\n",xp[3 * nextn[indn]],xp[1 + 3 * nextn[indn]],xp[2 + 3 * nextn[indn]]);
-  //        indn = nextn[indn];
-  //      }
-  //      printf("\n");
-  //    }
-  //  }
-  //}
+
