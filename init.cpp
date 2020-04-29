@@ -8,9 +8,9 @@ void init(const unsigned int Np, const unsigned int N, const double h, double* x
   // initialize
   #pragma omp parallel
   {
-    #pragma omp for nowait
+    #pragma omp for 
     for (unsigned int i = 0; i < Np; ++i) nextn[i] = -1; 
-    #pragma omp for nowait
+    #pragma omp for 
     for (unsigned int i = 0; i < N * N; ++i) { firstn[i] = -1; number[i] = 0;}
     #pragma omp for
     for (unsigned int i = 0; i < N * N * N * 3; ++i) Fe[i] = 0;
@@ -23,8 +23,8 @@ void init(const unsigned int Np, const unsigned int N, const double h, double* x
 
     for (unsigned int j = 0; j < 3; ++j)
     {
-      // particles uniformly distributed in [2h,h(N-1)-2h]^3
-      xp[j + 3 * i] = drand48() * h * (N-1);//3 * h + (h * (N-1) - 6 * h) * drand48(); 
+      // particles uniformly distributed in [2h,h(N-1)-2h]^3 drand48() * h * (N-1);//3
+      xp[j + 3 * i] = drand48() * h * (N-1); //3 * h + (h * (N-1) - 6 * h) * drand48(); 
       // forces uniformly distributed in [-1,1] 
       fl[j + 3 * i] = 2 * drand48() - 1;
     }
