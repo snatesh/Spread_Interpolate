@@ -1,20 +1,17 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
-PROJECT(spreadInterp)
+PROJECT(spreadInterp CXX)
 
 # lib and bin will be in top source
 SET(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "gcc-7.5.0")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "7.5.0")
     message(FATAL_ERROR "Insufficient gcc version")
   endif()
 endif()
 
 # make sure we can link to openmp
-find_package(OpenMP)
-if (NOT OpenMP_CXX_FOUND)
-    message(FATAL_ERROR "Could not find OpenMP")
-endif()
+find_package(OpenMP REQUIRED)
 
 # general compiler flags
 option(debug "Build with debugger" OFF)
@@ -59,7 +56,7 @@ INSTALL(TARGETS ioLib LIBRARY ARCHIVE DESTINATION lib DESTINATION lib)
 # building benchmark
 ADD_EXECUTABLE(spread_interp_bench ${benchSRC})
 set_source_files_properties(${benchSRC} PROPERTIES COMPILE_FLAGS "-fopenmp")
-TARGET_LINK_LIBRARIES(spread_interp_bench spreadInterpLib ioLib initLib OpenMP::OpenMP_CXX)
+TARGET_LINK_LIBRARIES(spread_interp_bench spreadInterpLib ioLib initLib gomp)
 
 # install benchmark
 INSTALL(TARGETS spread_interp_bench RUNTIME DESTINATION bin/benchmark)
