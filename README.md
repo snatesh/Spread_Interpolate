@@ -25,4 +25,6 @@ By default, `$INSTALL_PATH` is the top of the source tree.
 
 Currently, the only executable is a benchmark test to measure speedup over serial performance.
 
+![Speedup](benchmark/speedup.png)
+
 
