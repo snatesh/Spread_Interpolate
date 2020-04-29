@@ -8,7 +8,6 @@ You will need to `apt install` at least the following dependencies:
 
 * build-essential
 * cmake
-* libproj-dev
 * libomp-dev
 * gcc 7.5.0 or later 
 
