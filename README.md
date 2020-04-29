@@ -9,7 +9,7 @@ You will need to `apt install` at least the following dependencies:
 * build-essential
 * cmake
 * libomp-dev
-* gcc 7.5.0 or later 
+* gcc 7.5.0 or later (eg. module load gcc-9.2 on cims machines)
 
 ### Build Instructions ###
 Now, execute the following from the top of the source tree: 
