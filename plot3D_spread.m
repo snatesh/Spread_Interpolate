@@ -1,4 +1,5 @@
 clear all; close all; clc;
+addpath('../DoublyPeriodic/DPFunctions/');
 set(groot, 'defaultLineLineWidth', 1.5);
 set(groot,'defaultLineMarkerSize',10);
 set(groot,'defaulttextinterpreter','latex');  
@@ -31,7 +32,21 @@ plot3(pts(:,1),pts(:,2),pts(:,3),'ro','MarkerFaceColor','r','MarkerSize',10); gr
 %[xE,yE,zE] = ndgrid(0:(N-1));
 cols = distinguishable_colors(N);
 figure(1); 
-quiver3(xE,yE,zE,Fex,Fey,Fez,5); hold on;% 'color',cols(j,:),'LineWidth',1);  hold on; grid on;
+quiver3(xE,yE,zE,Fex,Fey,Fez,10,'Linewidth',2); hold on;% 'color',cols(j,:),'LineWidth',1);  hold on; grid on;
+
+alpha = w/2; 
+beta = 1.3267*w; Rh = 1.7305;
+phi = @(z) ((z/alpha).^2 <= 1).*exp(beta*(sqrt(1-(z/alpha).^2)-1));%
+normM = integral(@(r)phi(r),-alpha,alpha);
+phiNorm = @(z) phi(z)./normM;
+xEpts = 0:(N-1); yEpts = xEpts; zEpts = xEpts; iwtsz = ones(1,N);
+[S,I] = SpreadWtsES(xEpts,yEpts,zEpts',pts,iwtsz,w,phiNorm);
+[gridf,gridg,gridh] = spread(S,fl,N,N);
+flinterp1 = interpolate(I,gridf,N,N);
+%[X,Y,Z] = meshgrid(xEpts); gridf = permute(gridf,[2,1,3]);
+%quiver3(xE,yE,zE,gridf(:),gridg(:),gridh(:),10,'Linewidth',2); hold on;% 'color',cols(j,:),'LineWidth',1);  hold on; grid on;
+
+%%
 levellist = linspace(min(Fex(:)),max(Fex(:)),100);
 Fex = reshape(Fex,N,N,N); xE = reshape(xE, N,N,N); yE = reshape(yE,N,N,N); zE = reshape(zE,N,N,N);
 for i = 1:length(levellist)

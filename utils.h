@@ -6,7 +6,13 @@
 #include <stdlib.h>
 #include <iostream>
 
-#define MEMORY_ALIGNMENT 64
+#ifdef __SSE2__
+  #define MEM_ALIGN 16
+#elif __AVX__
+  #define MEM_ALIGN 32
+#elif defined(__MIC__)
+  #define MEM_ALIGN 64
+#endif
 
 class Timer {
   public:
@@ -50,7 +56,7 @@ template <> double read_option<double>(const char* option, int argc, char** argv
 }
 
 inline void* aligned_malloc(size_t size) {
-  constexpr uintptr_t ALIGN_MASK = MEMORY_ALIGNMENT - 1;
+  constexpr uintptr_t ALIGN_MASK = MEM_ALIGN - 1;
   char* p = (char*)malloc(size + 2 + ALIGN_MASK);
   if (!p) return p;
 
