@@ -55,7 +55,7 @@ void interp_col(const double* Fec, const double* Gec, const double* Hec,
     glsum += Gec[i + i0] * delta[ipt + i * npts]; 
     hlsum += Hec[i + i0] * delta[ipt + i * npts]; 
   }
-  flc[ipt] = flsum; glc[ipt] = glsum; hlc[ipt] = hlsum;
+  flc[ipt] += flsum; glc[ipt] += glsum; hlc[ipt] += hlsum;
 }
 
 void spread_interp(double* xp, double* yp, double* zp, double* fl, double* gl, 
