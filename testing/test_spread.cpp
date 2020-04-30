@@ -27,12 +27,10 @@ int main(int argc, char* argv[])
   // spreading width, num uniform pts on each axis, num particles
   const unsigned short w = 6, N = w * ((int) 64 / w); 
   // grid spacing, effective radius, num total columns
-  const double h = 1, Rh = 1.7305 * h, L = h * N; const unsigned int N2 = N * N;
+  const double h = 1; const unsigned int N2 = N * N;
   
-  // max packing density
-  double phimax = 0.5;
   // num particles
-  const unsigned int Np = (int) (3.0 / 4.0 / M_PI * phimax * pow(L / Rh, 3));
+  const unsigned int Np = 10; 
 
   // particle positions (x1,y1,z1,x2,y2,z2,...)
   double* xp = (double*) aligned_malloc(Np * sizeof(double));
@@ -58,57 +56,29 @@ int main(int argc, char* argv[])
   // nextn(i) to hold index of the next particle in the column with particle i
   int* nextn = (int*) aligned_malloc(Np * sizeof(int));
   
-  const bool write = false;
+  init(Np, N, h, xp, yp, zp, fl, gl, hl, Fe, Ge, He, firstn, nextn, number);
   
-  const unsigned int nreps = 10, maxthreads = 12; double Times[maxthreads];
-  for (unsigned int ithread = 1; ithread <= maxthreads; ++ithread)
-  {
-    omp_set_num_threads(ithread);
-    double times = 0;
-    for (unsigned int irep = 0; irep < nreps; ++irep)
-    {
+  const bool write = true;
+  
+  if (write) write_to_file(xp, yp, zp, Np, "particles.txt");
       
-      init(Np, N, h, xp, yp, zp, fl, gl, hl, Fe, Ge, He, firstn, nextn, number);
+  spread_interp(xp, yp, zp, fl, gl, hl, Fe, Ge, He, firstn, nextn, number, w, h, N, true);
+  
+  if (write)
+  { 
+    write_to_file(Fe, Ge, He, N2 * N, "spread.txt"); 
+    write_coords(N,h,"coords.txt");
+    write_to_file(fl, gl, hl, Np, "forces.txt");
+  }
       
-      double time = omp_get_wtime(); 
-      spread_interp(xp, yp, zp, fl, gl, hl, Fe, Ge, He, firstn, nextn, number, w, h, N, true);
-      times += omp_get_wtime() - time;      
-
-      if (write)
-      { 
-        write_to_file(xp, yp, zp, Np, "particles.txt"); 
-        write_to_file(Fe, Ge, He, N2 * N, "spread.txt"); 
-        write_coords(N,h,"coords.txt");
-        write_to_file(fl, gl, hl, Np, "forces.txt");
-      }
-      
-      // reinitialize force for interp
-      #pragma omp parallel for
-      for (unsigned int i = 0; i < Np; ++i) { fl[i] = gl[i] = hl[i] = 0;}
-
-      time = omp_get_wtime();
-      spread_interp(xp, yp, zp, fl, gl, hl, Fe, Ge, He, firstn, nextn, number, w, h, N, false);
-      times += omp_get_wtime() - time;      
-
-      if (write) write_to_file(fl, gl, hl, Np, "interp.txt"); 
-
-    }
-    Times[ithread-1] = times/((double) nreps);
-    std::cout << ithread << " " << Times[ithread-1] << std::endl;
-  }
-  std::ofstream file; file.open("Times.txt");
-  if (file.is_open())
-  {
-    for (unsigned int ithread = 1; ithread <= maxthreads; ++ithread)
-    {
-      file << setprecision(16) << Times[ithread-1] << std::endl;
-    }
-    file.close();
-  }
-  else
-  {
-    std::cout << "Unable to open file Times.txt" << std::endl;
-  }
+  // reinitialize force for interp
+  #pragma omp parallel for
+  for (unsigned int i = 0; i < Np; ++i) { fl[i] = gl[i] = hl[i] = 0;}
+  
+  spread_interp(xp, yp, zp, fl, gl, hl, Fe, Ge, He, firstn, nextn, number, w, h, N, false);
+  
+  if (write) write_to_file(fl, gl, hl, Np, "interp.txt"); 
+  
   aligned_free(xp);
   aligned_free(yp);
   aligned_free(zp);
@@ -121,8 +91,7 @@ int main(int argc, char* argv[])
   aligned_free(Fe);
   aligned_free(Ge);
   aligned_free(He);
-
-	return 0;
+  return 0;
 }
 
  

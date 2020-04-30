@@ -6,18 +6,17 @@
 using std::setw;
 using std::setprecision;
 
-void write_to_file(const double* F, const unsigned int N, const char* fname)
+void write_to_file(const double* F, const double* G, const double* H,
+                   const unsigned int N, const char* fname)
 {
   std::ofstream file; file.open(fname);
   if (file.is_open())
   {
     for (unsigned int i = 0; i < N; ++i)
     {
-      for (unsigned int j = 0; j < 3; ++j)
-      {
-        file << setprecision(16) << F[j + i * 3] << " ";
-      }
-      file << std::endl;
+      file << setprecision(16) << F[i] << " "
+           << setprecision(16) << G[i] << " "
+           << setprecision(16) << H[i] << "\n";
     }
     file.close();
   }

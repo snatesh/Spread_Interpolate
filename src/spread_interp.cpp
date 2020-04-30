@@ -1,6 +1,8 @@
 #include<math.h>
 #include<omp.h>
+#include<stdalign.h>
 #include"spread_interp.h"
+
 
 #ifdef __SSE2__
   #define MEM_ALIGN 16
@@ -10,9 +12,8 @@
   #define MEM_ALIGN 64
 #endif
 
-#define ALIGN  __attribute__((aligned (MEM_ALIGN)))
-
-void spread_interp(double* xp, double* fl, double* Fe, int* firstn, 
+void spread_interp(double* xp, double* yp, double* zp, double* fl, double* gl, 
+                   double* hl, double* Fe, double* Ge, double* He, int* firstn, 
                    int* nextn, unsigned int* number, const unsigned short w, 
                    const double h, const unsigned short N, const bool mode)
 {
@@ -36,7 +37,7 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
         if (l >= 0 )
         {
           // global indices of w x w x N subarray influenced column(i,j)
-          ALIGN unsigned int indc3D[w2 * N];
+          alignas(MEM_ALIGN) unsigned int indc3D[w2 * N];
           for (int i = 0; i < w; ++i) 
           {
             int i3D = ii + i - w/2 + 1;
@@ -51,21 +52,33 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
           }
           
           // gather eulerian foces for one column into contig mem Fec
-          ALIGN double Fec[w2 * N * 3];  
+          alignas(MEM_ALIGN) double Fec[w2 * N];  
+          alignas(MEM_ALIGN) double Gec[w2 * N];  
+          alignas(MEM_ALIGN) double Hec[w2 * N];  
           gather(w2 * N, Fec, Fe, indc3D);
+          gather(w2 * N, Gec, Ge, indc3D);
+          gather(w2 * N, Hec, He, indc3D);
           
           // number of pts in this column, particle indices
           unsigned int npts = number[jj + ii * N], indx[npts];
           for (unsigned int ipt = 0; ipt < npts; ++ipt) {indx[ipt] = l; l = nextn[l];}
           
           // gather lagrangian pts and forces into xpc and flc
-          ALIGN double xpc[npts * 3]; 
-          ALIGN double flc[npts * 3]; 
+          alignas(MEM_ALIGN) double xpc[npts]; 
+          alignas(MEM_ALIGN) double ypc[npts]; 
+          alignas(MEM_ALIGN) double zpc[npts]; 
+          alignas(MEM_ALIGN) double flc[npts]; 
+          alignas(MEM_ALIGN) double glc[npts]; 
+          alignas(MEM_ALIGN) double hlc[npts]; 
           gather(npts, xpc, xp, indx);
+          gather(npts, ypc, yp, indx);
+          gather(npts, zpc, zp, indx);
           gather(npts, flc, fl, indx);
+          gather(npts, glc, gl, indx);
+          gather(npts, hlc, hl, indx);
           //for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
           // get the kernel w x w x w kernel weights for each particle in col 
-          ALIGN double delta[w2 * w * npts];
+          alignas(MEM_ALIGN) double delta[w2 * w * npts];
           for (int j = 0; j < w; ++j)
           {
             // unwrapped y coordinates
@@ -77,15 +90,15 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
               for (int k = 0; k < w; ++k)
               {
                 unsigned int m = at(i,j,k,w,w);
-                #pragma omp simd // vectorization over particles in col
+                //#pragma omp simd aligned(delta,xpc,ypc,zpc: MEM_ALIGN) // vectorization over particles in col
                 for (unsigned int ipt = 0; ipt < npts; ++ipt) 
                 {
                   // unwrapped z coordinates
-                  double fk = (double) (((int)xpc[2 + 3 * ipt] / h) + k - w/2 + 1) * h;
+                  double fk = (double) (((int)zpc[ipt] / h) + k - w/2 + 1) * h;
                   // kernel weights 
-                  delta[ipt + m * npts] = deltaf(xpc[3 * ipt] - fi, \
-                                                 xpc[1 + 3 * ipt] - fj, \
-                                                 xpc[2 + 3 * ipt] - fk) * weight;  
+                  delta[ipt + m * npts] = deltaf(xpc[ipt] - fi, \
+                                                 ypc[ipt] - fj, \
+                                                 zpc[ipt] - fk) * weight;  
 
                 }
               }
@@ -95,48 +108,40 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
           if (mode)
           {         
             // update Eulerian density
-            int offset1 = w2 * N;
             for (unsigned int ipt = 0; ipt < npts; ++ipt)
             {
-              int m0 = ((int) xpc[2 + 3 * ipt] / h - w/2 + 1);
-              int offset0 = w2 * m0;
-              #pragma omp simd // vectorize over eulerian pts
+              int i0 = w2 * ((int) zpc[ipt] / h - w/2 + 1);
+              //#pragma omp simd aligned(Fec,Gec,Hec,flc,glc,hlc,delta: MEM_ALIGN)// vectorize over eulerian pts
               for (int i = 0; i < w2 * w; ++i)
               {
-                int k = i / w2 + m0, ic = i + offset0;
-                if (k < 0) ic = i + offset0 + offset1;
-                if (k >= N) ic = i + offset0 - offset1;
-                Fec[3 * ic] += delta[ipt + i * npts] * flc[3 * ipt]; 
-                Fec[1 + 3 * ic] += delta[ipt + i * npts] * flc[1 + 3 * ipt]; 
-                Fec[2 + 3 * ic] += delta[ipt + i * npts] * flc[2 + 3 * ipt]; 
+                Fec[i + i0] += delta[ipt + i * npts] * flc[ipt]; 
+                Gec[i + i0] += delta[ipt + i * npts] * glc[ipt]; 
+                Hec[i + i0] += delta[ipt + i * npts] * hlc[ipt]; 
               }
             }
-            ///for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
             // scatter back to global eulerian grid
             scatter(w2 * N, Fec, Fe, indc3D);
+            scatter(w2 * N, Gec, Ge, indc3D);
+            scatter(w2 * N, Hec, He, indc3D);
           } 
           else
           {
             // interpolate lagrangian density
-            int offset1 = w2 * N;
-            for (int i = 0; i < w2 * w; ++i)
+            for (unsigned int ipt = 0; ipt < npts; ++ipt)
             {
-              #pragma omp simd // vectorize over lagrangian pts 
-              for (unsigned int ipt = 0; ipt < npts; ++ipt)
+              int i0 = w2 * ((int) zpc[ipt] / h - w/2 + 1);
+              //#pragma omp simd aligned(Fec,Gec,Hec,flc,glc,hlc,delta: MEM_ALIGN) // vectorize over lagrangian pts 
+              for (int i = 0; i < w2 * w; ++i)
               {
-                int m0 = ((int) xpc[2 + 3 * ipt] / h - w/2 + 1);
-                int offset0 = w2 * m0;
-                int k = i / w2 + m0, ic = i + offset0;
-                if (k < 0) ic = i + offset0 + offset1;
-                if (k >= N) ic = i + offset0 - offset1;
-                flc[ipt] += Fec[3 * ic] * delta[ipt + i * npts]; 
-                flc[1 + 3 * ipt] += Fec[1 + 3 * ic] * delta[ipt + i * npts]; 
-                flc[2 + 3 * ipt] += Fec[2 + 3 * ic] * delta[ipt + i * npts]; 
+                flc[ipt] += Fec[i + i0] * delta[ipt + i * npts]; 
+                glc[ipt] += Gec[i + i0] * delta[ipt + i * npts]; 
+                hlc[ipt] += Hec[i + i0] * delta[ipt + i * npts]; 
               }
             }   
-            //for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
             // scatter back to global lagrangian grid
             scatter(npts, flc, fl, indx);
+            scatter(npts, glc, gl, indx);
+            scatter(npts, hlc, hl, indx);
           }
         } 
       // go to next column in group
@@ -156,7 +161,6 @@ inline double const deltaf(const double x, const double y, const double z)
 }
 
 // flattened index into 3D array
-#pragma omp declare simd
 inline unsigned int const at(unsigned int i, unsigned int j,unsigned int k,\
                              const unsigned int Nx, const unsigned int Ny)
 {
@@ -164,7 +168,6 @@ inline unsigned int const at(unsigned int i, unsigned int j,unsigned int k,\
 }
 
 // flatted index into 3D array, corrected for periodic boundaries
-#pragma omp declare simd
 inline unsigned int const pbat(int i, int j, int k, const int Nx, const int Ny)
 {
   if (i < 0) i = Nx + i; else if (i >= Nx) i = i - Nx; 
@@ -173,7 +176,6 @@ inline unsigned int const pbat(int i, int j, int k, const int Nx, const int Ny)
 }
 
 // flatted index into 3D array, corrected for periodic boundaries
-#pragma omp declare simd
 inline unsigned int const pbat(int i, int j, int k, const int Nx, const int Ny, const int Nz)
 {
   if (i < 0) i = Nx + i; else if (i >= Nx) i = i - Nx; 
@@ -188,9 +190,7 @@ inline void gather(unsigned int N, double* trg, double const* src, const unsigne
   #pragma omp simd
   for (unsigned int i = 0; i < N; ++i) 
   {
-    trg[3 * i] = src[3 * inds[i]];
-    trg[1 + 3 * i] = src[1 + 3 * inds[i]];
-    trg[2 + 3 * i] = src[2 + 3 * inds[i]];
+    trg[i] = src[inds[i]];
   }
 }
 
@@ -200,9 +200,7 @@ inline void scatter(unsigned int N, double const* trg, double* src, const unsign
   #pragma omp simd
   for (unsigned int i = 0; i < N; ++i) 
   {
-    src[3 * inds[i]] = trg[3 * i];
-    src[1 + 3 * inds[i]] = trg[1 + 3 * i];
-    src[2 + 3 * inds[i]] = trg[2 + 3 * i];
+    src[inds[i]] = trg[i];
   }
 }
 
