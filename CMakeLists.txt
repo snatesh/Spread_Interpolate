@@ -33,6 +33,7 @@ SET(ioSRC src/io.cpp)
 SET(initSRC src/init.cpp)
 SET(spreadInterpSRC src/spread_interp.cpp)
 SET(benchSRC benchmark/spread_interp_bench.cpp)
+SET(testSRC testing/test_spread.cpp)
 
 # set build output paths
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -58,5 +59,13 @@ ADD_EXECUTABLE(spread_interp_bench ${benchSRC})
 set_source_files_properties(${benchSRC} PROPERTIES COMPILE_FLAGS "-fopenmp")
 TARGET_LINK_LIBRARIES(spread_interp_bench spreadInterpLib ioLib initLib gomp)
 
+# building test
+ADD_EXECUTABLE(test_spread ${testSRC})
+set_source_files_properties(${testSRC} PROPERTIES COMPILE_FLAGS "-fopenmp")
+TARGET_LINK_LIBRARIES(test_spread spreadInterpLib ioLib initLib gomp)
+
 # install benchmark
 INSTALL(TARGETS spread_interp_bench RUNTIME DESTINATION bin/benchmark)
+
+# install test
+INSTALL(TARGETS test_spread RUNTIME DESTINATION bin/testing)

@@ -10,8 +10,6 @@
   #define MEM_ALIGN 64
 #endif
 
-#define ALIGN  __attribute__((aligned (MEM_ALIGN)))
-
 void spread_interp(double* xp, double* fl, double* Fe, int* firstn, 
                    int* nextn, unsigned int* number, const unsigned short w, 
                    const double h, const unsigned short N, const bool mode)
@@ -36,7 +34,7 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
         if (l >= 0 )
         {
           // global indices of w x w x N subarray influenced column(i,j)
-          ALIGN unsigned int indc3D[w2 * N];
+          alignas(MEM_ALIGN) unsigned int indc3D[w2 * N];
           for (int i = 0; i < w; ++i) 
           {
             int i3D = ii + i - w/2 + 1;
@@ -51,7 +49,7 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
           }
           
           // gather eulerian foces for one column into contig mem Fec
-          ALIGN double Fec[w2 * N * 3];  
+          alignas(MEM_ALIGN) double Fec[w2 * N * 3];  
           gather(w2 * N, Fec, Fe, indc3D);
           
           // number of pts in this column, particle indices
@@ -59,13 +57,13 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
           for (unsigned int ipt = 0; ipt < npts; ++ipt) {indx[ipt] = l; l = nextn[l];}
           
           // gather lagrangian pts and forces into xpc and flc
-          ALIGN double xpc[npts * 3]; 
-          ALIGN double flc[npts * 3]; 
+          alignas(MEM_ALIGN) double xpc[npts * 3]; 
+          alignas(MEM_ALIGN) double flc[npts * 3]; 
           gather(npts, xpc, xp, indx);
           gather(npts, flc, fl, indx);
           //for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
           // get the kernel w x w x w kernel weights for each particle in col 
-          ALIGN double delta[w2 * w * npts];
+          alignas(MEM_ALIGN) double delta[w2 * w * npts];
           for (int j = 0; j < w; ++j)
           {
             // unwrapped y coordinates
@@ -111,7 +109,6 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
                 Fec[2 + 3 * ic] += delta[ipt + i * npts] * flc[2 + 3 * ipt]; 
               }
             }
-            ///for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
             // scatter back to global eulerian grid
             scatter(w2 * N, Fec, Fe, indc3D);
           } 
@@ -129,12 +126,11 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
                 int k = i / w2 + m0, ic = i + offset0;
                 if (k < 0) ic = i + offset0 + offset1;
                 if (k >= N) ic = i + offset0 - offset1;
-                flc[ipt] += Fec[3 * ic] * delta[ipt + i * npts]; 
+                flc[3 * ipt] += Fec[3 * ic] * delta[ipt + i * npts]; 
                 flc[1 + 3 * ipt] += Fec[1 + 3 * ic] * delta[ipt + i * npts]; 
                 flc[2 + 3 * ipt] += Fec[2 + 3 * ic] * delta[ipt + i * npts]; 
               }
             }   
-            //for (unsigned int i = 0; i < npts; ++i) std::cout << flc[i] << std::endl;
             // scatter back to global lagrangian grid
             scatter(npts, flc, fl, indx);
           }
