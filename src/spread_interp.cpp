@@ -12,13 +12,61 @@
   #define MEM_ALIGN 64
 #endif
 
+void get_delta_col(double* delta, const double* xpc, const double* ypc, const double* zpc, 
+                    const double fi, const double fj, const double weight, const int m, 
+                    const int k, const int npts, const int w, const int h)
+{
+  #pragma omp simd aligned(delta,xpc,ypc,zpc: MEM_ALIGN) // vectorization over particles in col
+  for (unsigned int ipt = 0; ipt < npts; ++ipt) 
+  {
+    // unwrapped z coordinates
+    double fk = (double) (((int)zpc[ipt] / h) + k - w/2 + 1) * h;
+    alignas(MEM_ALIGN) double x[3]; 
+    x[0] = xpc[ipt] - fi;
+    x[1] = ypc[ipt] - fj;
+    x[2] = zpc[ipt] - fk;
+    // kernel weights 
+    delta[ipt + m * npts] = deltaf(x) * weight;  
+  }
+} 
+
+void spread_col(double* Fec, double* Gec, double* Hec, const double* delta, 
+                const double* flc, const double* glc, const double* hlc,
+                const int i0, const int ipt, const int npts, const int w3)
+{
+  #pragma omp simd aligned(Fec,Gec,Hec,flc,glc,hlc,delta: MEM_ALIGN)// vectorize over eulerian pts
+  for (int i = 0; i < w3; ++i)
+  {
+    Fec[i + i0] += delta[ipt + i * npts] * flc[ipt]; 
+    Gec[i + i0] += delta[ipt + i * npts] * glc[ipt]; 
+    Hec[i + i0] += delta[ipt + i * npts] * hlc[ipt]; 
+  }
+}
+
+void interp_col(const double* Fec, const double* Gec, const double* Hec, 
+                const double* delta, double* flc, double* glc, double* hlc,
+                const int i0, const int ipt, const int npts, const int w3)
+{
+  double flsum, glsum, hlsum; flsum = glsum = hlsum = 0;
+  #pragma omp simd aligned(Fec,Gec,Hec,flc,glc,hlc,delta: MEM_ALIGN) reduction(+:flsum,glsum,hlsum)// vectorize over lagrangian pts 
+  for (int i = 0; i < w3; ++i)
+  {
+    flsum += Fec[i + i0] * delta[ipt + i * npts]; 
+    glsum += Gec[i + i0] * delta[ipt + i * npts]; 
+    hlsum += Hec[i + i0] * delta[ipt + i * npts]; 
+  }
+  flc[ipt] = flsum; glc[ipt] = glsum; hlc[ipt] = hlsum;
+}
+
 void spread_interp(double* xp, double* yp, double* zp, double* fl, double* gl, 
                    double* hl, double* Fe, double* Ge, double* He, int* firstn, 
                    int* nextn, unsigned int* number, const unsigned short w, 
                    const double h, const unsigned short N, const bool mode)
 {
+
   const double weight = (mode ? 1 : h * h * h);
   const unsigned short w2 = w * w; const unsigned int N2 = N * N; 
+  const unsigned short w3 = w2 * w;
   // loop over w^2 groups of columns
   for (unsigned int izero = 0; izero < w; ++izero)
   {
@@ -90,17 +138,20 @@ void spread_interp(double* xp, double* yp, double* zp, double* fl, double* gl,
               for (int k = 0; k < w; ++k)
               {
                 unsigned int m = at(i,j,k,w,w);
-                //#pragma omp simd aligned(delta,xpc,ypc,zpc: MEM_ALIGN) // vectorization over particles in col
-                for (unsigned int ipt = 0; ipt < npts; ++ipt) 
-                {
-                  // unwrapped z coordinates
-                  double fk = (double) (((int)zpc[ipt] / h) + k - w/2 + 1) * h;
-                  // kernel weights 
-                  delta[ipt + m * npts] = deltaf(xpc[ipt] - fi, \
-                                                 ypc[ipt] - fj, \
-                                                 zpc[ipt] - fk) * weight;  
+                get_delta_col(delta, xpc, ypc,  zpc, fi, fj, weight, m, 
+                               k, npts, w, h);
+  
+                ////#pragma omp simd aligned(delta,xpc,ypc,zpc: MEM_ALIGN) // vectorization over particles in col
+                //for (unsigned int ipt = 0; ipt < npts; ++ipt) 
+                //{
+                //  // unwrapped z coordinates
+                //  double fk = (double) (((int)zpc[ipt] / h) + k - w/2 + 1) * h;
+                //  // kernel weights 
+                //  delta[ipt + m * npts] = deltaf(xpc[ipt] - fi, \
+                //                                 ypc[ipt] - fj, \
+                //                                 zpc[ipt] - fk) * weight;  
 
-                }
+                //}
               }
             }
           }
@@ -111,13 +162,16 @@ void spread_interp(double* xp, double* yp, double* zp, double* fl, double* gl,
             for (unsigned int ipt = 0; ipt < npts; ++ipt)
             {
               int i0 = w2 * ((int) zpc[ipt] / h - w/2 + 1);
-              //#pragma omp simd aligned(Fec,Gec,Hec,flc,glc,hlc,delta: MEM_ALIGN)// vectorize over eulerian pts
-              for (int i = 0; i < w2 * w; ++i)
-              {
-                Fec[i + i0] += delta[ipt + i * npts] * flc[ipt]; 
-                Gec[i + i0] += delta[ipt + i * npts] * glc[ipt]; 
-                Hec[i + i0] += delta[ipt + i * npts] * hlc[ipt]; 
-              }
+              
+              spread_col(Fec, Gec, Hec, delta, flc, glc, hlc,
+                         i0, ipt, npts, w);
+              ////#pragma omp simd aligned(Fec,Gec,Hec,flc,glc,hlc,delta: MEM_ALIGN)// vectorize over eulerian pts
+              //for (int i = 0; i < w2 * w; ++i)
+              //{
+              //  Fec[i + i0] += delta[ipt + i * npts] * flc[ipt]; 
+              //  Gec[i + i0] += delta[ipt + i * npts] * glc[ipt]; 
+              //  Hec[i + i0] += delta[ipt + i * npts] * hlc[ipt]; 
+              //}
             }
             // scatter back to global eulerian grid
             scatter(w2 * N, Fec, Fe, indc3D);
@@ -130,13 +184,16 @@ void spread_interp(double* xp, double* yp, double* zp, double* fl, double* gl,
             for (unsigned int ipt = 0; ipt < npts; ++ipt)
             {
               int i0 = w2 * ((int) zpc[ipt] / h - w/2 + 1);
-              //#pragma omp simd aligned(Fec,Gec,Hec,flc,glc,hlc,delta: MEM_ALIGN) // vectorize over lagrangian pts 
-              for (int i = 0; i < w2 * w; ++i)
-              {
-                flc[ipt] += Fec[i + i0] * delta[ipt + i * npts]; 
-                glc[ipt] += Gec[i + i0] * delta[ipt + i * npts]; 
-                hlc[ipt] += Hec[i + i0] * delta[ipt + i * npts]; 
-              }
+              interp_col(Fec, Gec, Hec, delta, flc, glc, hlc,
+                         i0, ipt, npts, w);
+              
+              ////#pragma omp simd aligned(Fec,Gec,Hec,flc,glc,hlc,delta: MEM_ALIGN) // vectorize over lagrangian pts 
+              //for (int i = 0; i < w2 * w; ++i)
+              //{
+              //  flc[ipt] += Fec[i + i0] * delta[ipt + i * npts]; 
+              //  glc[ipt] += Gec[i + i0] * delta[ipt + i * npts]; 
+              //  hlc[ipt] += Hec[i + i0] * delta[ipt + i * npts]; 
+              //}
             }   
             // scatter back to global lagrangian grid
             scatter(npts, flc, fl, indx);
@@ -151,56 +208,4 @@ void spread_interp(double* xp, double* yp, double* zp, double* fl, double* gl,
   }
 }    
 
-// Normalized ES kernel for w = 6, beta/w = 1.7305, h =1
-#pragma omp declare simd
-inline double const deltaf(const double x, const double y, const double z)
-{
-  return exp(7.9602 * (sqrt(1 - x * x / 9) - 1)) * \
-         exp(7.9602 * (sqrt(1 - y * y / 9) - 1)) * \
-         exp(7.9602 * (sqrt(1 - z * z / 9) - 1)) / 16.274876371520904;
-}
-
-// flattened index into 3D array
-inline unsigned int const at(unsigned int i, unsigned int j,unsigned int k,\
-                             const unsigned int Nx, const unsigned int Ny)
-{
-  return i + Nx * (j + Ny * k);
-}
-
-// flatted index into 3D array, corrected for periodic boundaries
-inline unsigned int const pbat(int i, int j, int k, const int Nx, const int Ny)
-{
-  if (i < 0) i = Nx + i; else if (i >= Nx) i = i - Nx; 
-  if (j < 0) j = Ny + j; else if (j >= Ny) j = j - Ny; 
-  return i + Nx * (j + Ny * k);
-}
-
-// flatted index into 3D array, corrected for periodic boundaries
-inline unsigned int const pbat(int i, int j, int k, const int Nx, const int Ny, const int Nz)
-{
-  if (i < 0) i = Nx + i; else if (i >= Nx) i = i - Nx; 
-  if (j < 0) j = Ny + j; else if (j >= Ny) j = j - Ny; 
-  if (k < 0) k = Nz + k; else if (k >= Nz) k = k - Nz;
-  return i + Nx * (j + Ny * k);
-}
-
-// gather data from src at inds into trg
-inline void gather(unsigned int N, double* trg, double const* src, const unsigned int* inds)
-{
-  #pragma omp simd
-  for (unsigned int i = 0; i < N; ++i) 
-  {
-    trg[i] = src[inds[i]];
-  }
-}
-
-// scatter data from trg at inds into src
-inline void scatter(unsigned int N, double const* trg, double* src, const unsigned int* inds)
-{
-  #pragma omp simd
-  for (unsigned int i = 0; i < N; ++i) 
-  {
-    src[inds[i]] = trg[i];
-  }
-}
 

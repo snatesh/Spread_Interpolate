@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
 {
 
   // spreading width, num uniform pts on each axis, num particles
-  const unsigned short w = 6, N = w * ((int) 64 / w); 
+  const unsigned short w = 6, N = w * ((int) 128 / w); 
   // grid spacing, effective radius, num total columns
   const double h = 1, Rh = 1.7305 * h, L = h * N; const unsigned int N2 = N * N;
   
@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
   
   const bool write = false;
   
-  const unsigned int nreps = 10, maxthreads = 12; double Times[maxthreads];
+  const unsigned int nreps = 1, maxthreads = 50; double Times[maxthreads];
   for (unsigned int ithread = 1; ithread <= maxthreads; ++ithread)
   {
     omp_set_num_threads(ithread);
