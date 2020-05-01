@@ -67,12 +67,14 @@ int main(int argc, char* argv[])
       
   // reinitialize force for interp
   #pragma omp parallel for
-  for (unsigned int i = 0; i < Np; ++i) { fl[i] = 0;}
+  for (unsigned int i = 0; i < 3 * Np; ++i) { fl[i] = 0;}
   
   spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, false);
   
   if (write) write_to_file(fl, Np, "interp.txt"); 
-  
+
+  read_from_file(fl,"interp.txt"); 
+ 
   aligned_free(xp);
   aligned_free(fl);
   aligned_free(firstn);
