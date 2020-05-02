@@ -42,11 +42,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # building lib
 add_library(spreadInterpLib STATIC ${spreadInterpSRC})
-set_source_files_properties(${spreadInterpSRC} PROPERTIES COMPILE_FLAGS "-O2 -ftree-vectorize -fopt-info -fopt-info-missed -mavx -fopenmp")
+set_source_files_properties(${spreadInterpSRC} PROPERTIES COMPILE_FLAGS "-Ofast -ftree-vectorize -fopt-info -mavx -fopenmp")
 add_library(ioLib STATIC ${ioSRC})
-set_source_files_properties(${ioSRC} PROPERTIES COMPILE_FLAGS "-O2 -ftree-vectorize -fopt-info")
+set_source_files_properties(${ioSRC} PROPERTIES COMPILE_FLAGS "-Ofast -ftree-vectorize")
 add_library(initLib STATIC ${initSRC})
-set_source_files_properties(${initSRC} PROPERTIES COMPILE_FLAGS "-O2 -fopenmp -ftree-vectorize -fopt-info")
+set_source_files_properties(${initSRC} PROPERTIES COMPILE_FLAGS "-Ofast -fopenmp -ftree-vectorize")
 
 # install libs
 install(TARGETS spreadInterpLib ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)

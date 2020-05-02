@@ -25,12 +25,15 @@ int main(int argc, char* argv[])
 {
 
   // spreading width, num uniform pts on each axis, num particles
-  const unsigned short w = 6, N = w * ((int) 64 / w); 
+  unsigned short w = 6, N = w * ((int) 64 / w), Nwrap = N;
+  // correct N for pbc
+  bool pbc = true;
+  if (pbc) N += w;  
   // grid spacing, effective radius, num total columns
   const double h = 1; const unsigned int N2 = N * N;
   
   // num particles
-  const unsigned int Np = 10; 
+  const unsigned int Np = 100; 
 
   // particle positions (x1,y1,z1,x2,y2,z2,...)
   double* xp = (double*) aligned_malloc(Np * 3 * sizeof(double));
@@ -39,8 +42,11 @@ int main(int argc, char* argv[])
   double* fl = (double*) aligned_malloc(Np * 3 * sizeof(double));
 
   // Eulerian force density array (F1,G1,H1,F2,G2,H2,...)
-  double* Fe = (double*) aligned_malloc(N2 * N * 3 * sizeof(double));
-
+  double *Fe = (double*) aligned_malloc(N2 * N * 3 * sizeof(double)), *Fe_wrap;
+  if (pbc) 
+  {
+    Fe_wrap = (double*) aligned_malloc(Nwrap * Nwrap * Nwrap * 3 * sizeof(double));
+  }
   // firstn(i,j) holds index of first particle in column(i,j)
   int* firstn = (int*) aligned_malloc(N2 * sizeof(int));
 
@@ -49,31 +55,49 @@ int main(int argc, char* argv[])
 
   // nextn(i) to hold index of the next particle in the column with particle i
   int* nextn = (int*) aligned_malloc(Np * sizeof(int));
-  
-  init(Np, N, h, xp, fl, Fe, firstn, nextn, number);
-  
+ 
+  if (!pbc) init(Np, N, h, xp, fl, Fe, firstn, nextn, number);
+  else init(Np, N, w, h, xp, fl, Fe, firstn, nextn, number);  
+
   const bool write = true;
   
   if (write) write_to_file(xp, Np, "particles.txt");
       
-  spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, true);
-  
+  if (!pbc) spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, true);
+  else spread_interp_pbc(xp, fl, Fe, Fe_wrap, firstn, nextn, number, w, h, N, true);
+
+ 
   if (write)
   { 
-    write_to_file(Fe, N2 * N, "spread.txt"); 
-    write_coords(N,h,"coords.txt");
+    if (!pbc) 
+    {
+      write_to_file(Fe, N2 * N, "spread.txt"); 
+      write_coords(N,h,"coords.txt");
+    }
+    else 
+    {
+      write_to_file(Fe_wrap, Nwrap * Nwrap * Nwrap, "spread.txt"); 
+      write_to_file(Fe, N2 * N, "spread_ext.txt"); 
+      write_coords(Nwrap,h,"coords.txt");
+    }
     write_to_file(fl, Np, "forces.txt");
+
   }
       
   // reinitialize force for interp
   #pragma omp parallel for
   for (unsigned int i = 0; i < 3 * Np; ++i) { fl[i] = 0;}
-  
-  spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, false);
+  if (pbc)
+  {
+    #pragma omp parallel for
+    for (unsigned int i = 0; i < N2 * N * 3; ++i) {Fe[i] = 0;}
+  }
+  if (!pbc) spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, false);
+  else spread_interp_pbc(xp, fl, Fe, Fe_wrap, firstn, nextn, number, w, h, N, false);
   
   if (write) write_to_file(fl, Np, "interp.txt"); 
 
-  read_from_file(fl,"interp.txt"); 
+  //read_from_file(fl,"interp.txt"); 
  
   aligned_free(xp);
   aligned_free(fl);
@@ -81,6 +105,7 @@ int main(int argc, char* argv[])
   aligned_free(nextn);
   aligned_free(number);
   aligned_free(Fe);
+  aligned_free(Fe_wrap);
   return 0;
 }
 

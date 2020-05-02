@@ -2,6 +2,9 @@
 #define _SPREAD_INTERP_H
 
 #include<math.h>
+#ifdef DEBUG
+#include<iostream>
+#endif
 // Normalized ES kernel for w = 6, beta/w = 1.7305, h =1
 #pragma omp declare simd
 inline double const deltaf(const double x, const double y, const double z)
@@ -47,7 +50,7 @@ inline void gather(unsigned int N, double* trg, double const* src, const unsigne
   }
 }
 
-// scatter data from trg at inds into src
+// scatter data from trg into src at inds
 inline void scatter(unsigned int N, double const* trg, double* src, const unsigned int* inds)
 {
   #pragma omp simd
@@ -60,8 +63,17 @@ inline void scatter(unsigned int N, double const* trg, double* src, const unsign
 }
 
 
-// spreading (mode=true) and interpolation (mode=false)
+// spreading (mode=true) and interpolation (mode=false) with no pbc (all particles 2h away from bndry)
 void spread_interp(double* xp, double* fl, double* Fe, int* firstn, 
                    int* nextn, unsigned int* number, const unsigned short w, 
                    const double h, const unsigned short N, const bool mode);
+// spreading (mode=true) and interpolation (mode=false) with pbc corrections
+void spread_interp_pbc(double* xp, double* fl, double* Fe, double* Fe_wrap, int* firstn, 
+                   int* nextn, unsigned int* number, const unsigned short w, 
+                   const double h, const unsigned short N, const bool mode);
+// implements copy opertion to enforce periodicity of eulerian data before interpolation
+void copy_pbc(double* Fe, const double* Fe_wrap, const unsigned short w, const unsigned int N);
+// implements fold operation to de-ghostify spread data, i.e. enable periodic spread
+void fold_pbc(double* Fe, double* Fe_wrap, const unsigned short w, const unsigned int N);
+
 #endif
