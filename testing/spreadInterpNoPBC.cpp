@@ -70,7 +70,7 @@ class SpreadTest : public ::testing::Test
     double* Fe_test;
 };
 
-TEST_F(SpreadTest, SpreadAndInterp)
+TEST_F(SpreadTest, SpreadAndInterpNoPBC)
 {
 
   // test spread by comparing Fe_test to Fe

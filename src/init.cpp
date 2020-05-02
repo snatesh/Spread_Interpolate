@@ -53,9 +53,9 @@ void init(const unsigned int Np, const unsigned int N, const unsigned short w,
   // initialize
   #pragma omp parallel
   {
-    #pragma omp for 
+    #pragma omp for nowait
     for (unsigned int i = 0; i < Np; ++i) nextn[i] = -1; 
-    #pragma omp for 
+    #pragma omp for nowait
     for (unsigned int i = 0; i < N * N; ++i) { firstn[i] = -1; number[i] = 0;}
     #pragma omp for
     for (unsigned int i = 0; i < N * N * N * 3; ++i) Fe[i] = 0;
@@ -90,7 +90,7 @@ void init(const unsigned int Np, const unsigned int N, const unsigned short w,
   }
 }
 
-// lagrangian and eulerian forces, positions read from file
+// lagrangian and eulerian forces, positions read from file no pbc
 void init(const unsigned int Np, const unsigned int N, const double h, double* xp,
           int* firstn, int* nextn, unsigned int* number)
 {
@@ -108,6 +108,38 @@ void init(const unsigned int Np, const unsigned int N, const double h, double* x
   for (unsigned int i = 0; i < Np; ++i) 
   {
     ii = (int) xp[3 * i] / h; jj = (int) xp[1 + 3 * i] / h; ind = jj + ii * N;
+    if (firstn[ind] < 0) { firstn[ind] = i;}
+    else
+    {
+      indn = firstn[ind];
+      while (nextn[indn] >= 0)
+      {
+        indn = nextn[indn];
+      }
+      nextn[indn] = i;
+    }
+    number[ind] += 1;
+  }
+}
+
+// lagrangian and eulerian forces, positions read from file with pbc
+void init(const unsigned int Np, const unsigned int N, const unsigned short w, 
+          const double h, double* xp, int* firstn, int* nextn, unsigned int* number)
+{
+  // initialize
+  #pragma omp parallel
+  {
+    #pragma omp for 
+    for (unsigned int i = 0; i < Np; ++i) nextn[i] = -1; 
+    #pragma omp for 
+    for (unsigned int i = 0; i < N * N; ++i) { firstn[i] = -1; number[i] = 0;}
+  }
+  
+  // populate particle positions and fill firstn and nextn (no need to parallelize)
+  int ii,jj,ind,indn;
+  for (unsigned int i = 0; i < Np; ++i) 
+  {
+    ii = (int) xp[3 * i] / h + w / 2; jj = (int) xp[1 + 3 * i] / h + w / 2; ind = jj + ii * N;
     if (firstn[ind] < 0) { firstn[ind] = i;}
     else
     {

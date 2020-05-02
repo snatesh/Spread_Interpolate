@@ -22,7 +22,7 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
     for (unsigned int jzero = 0; jzero < w; ++jzero)
     {
       // parallelize over the N^2/w^2 columns in a group
-      //#pragma omp parallel for
+      #pragma omp parallel for
       for (unsigned int ijcount = 0; ijcount < N2/w2; ++ijcount)
       {
         // column indices
@@ -147,6 +147,7 @@ void spread_interp_pbc(double* xp, double* fl, double* Fe, double* Fe_wrap, int*
 {
   const double weight = (mode ? 1 : h * h * h);
   const unsigned short w2 = w * w; const unsigned int N2 = N * N; 
+  const unsigned short w3 = w2 * w;
   
   // ensure periodicity of eulerian data for interpolation
   if (!mode) copy_pbc(Fe, Fe_wrap, w, N);
@@ -210,17 +211,7 @@ void spread_interp_pbc(double* xp, double* fl, double* Fe, double* Fe_wrap, int*
               for (int k = 0; k < w; ++k)
               {
                 unsigned int m = at(i,j,k,w,w);
-                #pragma omp simd // vectorization over particles in col
-                for (unsigned int ipt = 0; ipt < npts; ++ipt) 
-                {
-                  // unwrapped z coordinates
-                  double fk = (double) (((int)xpc[2 + 3 * ipt] / h) + k - w/2 + 1) * h;
-                  // kernel weights 
-                  delta[ipt + m * npts] = deltaf(xpc[3 * ipt] - fi, \
-                                                 xpc[1 + 3 * ipt] - fj, \
-                                                 xpc[2 + 3 * ipt] - fk) * weight;  
-
-                }
+                get_delta_col(delta, xpc, fi, fj, weight, m, k, npts, w, h);
               }
             }
           }
@@ -231,30 +222,17 @@ void spread_interp_pbc(double* xp, double* fl, double* Fe, double* Fe_wrap, int*
             for (unsigned int ipt = 0; ipt < npts; ++ipt)
             {
               int i0 = w2 * ((int) xpc[2 + 3 * ipt] / h + 1);
-              #pragma omp simd // vectorize over eulerian pts
-              for (int i = 0; i < w2 * w; ++i)
-              {
-                Fec[3 * (i + i0)] += delta[ipt + i * npts] * flc[3 * ipt]; 
-                Fec[1 + 3 * (i + i0)] += delta[ipt + i * npts] * flc[1 + 3 * ipt]; 
-                Fec[2 + 3 * (i + i0)] += delta[ipt + i * npts] * flc[2 + 3 * ipt]; 
-              }
+              spread_col(Fec, delta, flc, i0, ipt, npts, w3);
             }
             // scatter back to global eulerian grid
             scatter(w2 * N, Fec, Fe, indc3D);
           } 
           else
           {
-            // interpolate lagrangian density
-            for (int i = 0; i < w2 * w; ++i)
+            for (unsigned int ipt = 0; ipt < npts; ++ipt)
             {
-              #pragma omp simd // vectorize over lagrangian pts 
-              for (unsigned int ipt = 0; ipt < npts; ++ipt)
-              {
-                int i0 = w2 * ((int) xpc[2 + 3 * ipt] / h + 1);
-                flc[3 * ipt] += Fec[3 * (i + i0)] * delta[ipt + i * npts]; 
-                flc[1 + 3 * ipt] += Fec[1 + 3 * (i + i0)] * delta[ipt + i * npts]; 
-                flc[2 + 3 * ipt] += Fec[2 + 3 * (i + i0)] * delta[ipt + i * npts]; 
-              }
+              int i0 = w2 * ((int) xpc[2 + 3 * ipt] / h + 1);
+              interp_col(Fec, delta, flc, i0, ipt, npts, w3);
             }
             // scatter back to global lagrangian grid
             scatter(npts, flc, fl, indx);
@@ -269,7 +247,49 @@ void spread_interp_pbc(double* xp, double* fl, double* Fe, double* Fe_wrap, int*
   if (mode) fold_pbc(Fe, Fe_wrap, w, N);
 }
 
+void get_delta_col(double* delta, const double* xpc, const double fi, 
+                   const double fj, const double weight, const int m, 
+                   const int k, const int npts, const int w, const int h)
+{
+  #pragma omp simd aligned(delta,xpc: MEM_ALIGN) // vectorization over particles in col
+  for (unsigned int ipt = 0; ipt < npts; ++ipt) 
+  {
+   // unwrapped z coordinates
+    double fk = (double) (((int)xpc[2 + 3 * ipt] / h) + k - w/2 + 1) * h;
+    alignas(MEM_ALIGN) double x[3]; 
+    x[0] = xpc[3 * ipt] - fi;
+    x[1] = xpc[1 + 3 * ipt] - fj;
+    x[2] = xpc[2 + 3 * ipt] - fk;
+    // kernel weights 
+    delta[ipt + m * npts] = deltaf(x) * weight;  
+  }
+}
 
+void spread_col(double* Fec, const double* delta, const double* flc, 
+                const int i0, const int ipt, const int npts, const int w3)
+{
+  #pragma omp simd aligned(Fec,delta: MEM_ALIGN)
+  for (int i = 0; i < w3; ++i)
+  {
+    Fec[3 * (i + i0)] += delta[ipt + i * npts] * flc[3 * ipt]; 
+    Fec[1 + 3 * (i + i0)] += delta[ipt + i * npts] * flc[1 + 3 * ipt]; 
+    Fec[2 + 3 * (i + i0)] += delta[ipt + i * npts] * flc[2 + 3 * ipt]; 
+  }
+}
+
+void interp_col(const double* Fec, const double* delta, double* flc, 
+                const int i0, const int ipt, const int npts, const int w3)
+{
+  double flsum, glsum, hlsum; flsum = glsum = hlsum = 0;
+  #pragma omp simd aligned(Fec,flc,delta: MEM_ALIGN) reduction(+:flsum,glsum,hlsum) 
+  for (int i = 0; i < w3; ++i)
+  {
+    flsum += Fec[3 * (i + i0)] * delta[ipt + i * npts]; 
+    glsum += Fec[1 + 3 * (i + i0)] * delta[ipt + i * npts]; 
+    hlsum += Fec[2 + 3 * (i + i0)] * delta[ipt + i * npts]; 
+  }
+  flc[3 * ipt] += flsum; flc[1 + 3 * ipt] += glsum; flc[2 + 3 * ipt] += hlsum;
+}
 
 void copy_pbc(double* Fe, const double* Fe_wrap, const unsigned short w, const unsigned int N)
 {

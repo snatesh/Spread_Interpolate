@@ -70,7 +70,7 @@ target_link_libraries(test_spread spreadInterpLib ioLib initLib gomp)
 # install benchmark
 install(TARGETS spread_interp_bench RUNTIME DESTINATION bin/benchmark)
 
-# install test
+# install exec for test data creation
 install(TARGETS test_spread RUNTIME DESTINATION bin/testing)
 
 
@@ -111,9 +111,12 @@ if (test)
   
   set(OLD_RUNTIME_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/testing)
-  add_executable(testSpreadInterp ${CMAKE_SOURCE_DIR}/testing/testSpreadInterp.cpp)
-  target_link_libraries(testSpreadInterp spreadInterpLib ioLib initLib gomp gtest_main)
+  add_executable(testSpreadInterpNoPBC ${CMAKE_SOURCE_DIR}/testing/spreadInterpNoPBC.cpp)
+  add_executable(testSpreadInterpPBC ${CMAKE_SOURCE_DIR}/testing/spreadInterpPBC.cpp)
+  target_link_libraries(testSpreadInterpNoPBC spreadInterpLib ioLib initLib gomp gtest_main)
+  target_link_libraries(testSpreadInterpPBC spreadInterpLib ioLib initLib gomp gtest_main)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${OLD_RUNTIME_OUTPUT_DIR})
   add_subdirectory(testing)
-  install(TARGETS testSpreadInterp RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/testing)
+  install(TARGETS testSpreadInterpNoPBC RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/testing)
+  install(TARGETS testSpreadInterpPBC RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/testing)
 endif()

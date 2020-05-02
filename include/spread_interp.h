@@ -7,6 +7,14 @@
 #endif
 // Normalized ES kernel for w = 6, beta/w = 1.7305, h =1
 #pragma omp declare simd
+inline double const deltaf(const double x[3])
+{
+  return exp(7.9602 * (sqrt(1 - x[0] * x[0] / 9) - 1)) * \
+         exp(7.9602 * (sqrt(1 - x[1] * x[1] / 9) - 1)) * \
+         exp(7.9602 * (sqrt(1 - x[2] * x[2] / 9) - 1)) / 16.274876371520904;
+}
+
+#pragma omp declare simd
 inline double const deltaf(const double x, const double y, const double z)
 {
   return exp(7.9602 * (sqrt(1 - x * x / 9) - 1)) * \
@@ -63,14 +71,29 @@ inline void scatter(unsigned int N, double const* trg, double* src, const unsign
 }
 
 
-// spreading (mode=true) and interpolation (mode=false) with no pbc (all particles 2h away from bndry)
+// spreading (mode=true) and interpolation (mode=false) with pbc
+// calculations done on the fly (bad for vectorization)
 void spread_interp(double* xp, double* fl, double* Fe, int* firstn, 
                    int* nextn, unsigned int* number, const unsigned short w, 
                    const double h, const unsigned short N, const bool mode);
-// spreading (mode=true) and interpolation (mode=false) with pbc corrections
+
+// spreading (mode=true) and interpolation (mode=false) 
+// with pbc corrections done separately
 void spread_interp_pbc(double* xp, double* fl, double* Fe, double* Fe_wrap, int* firstn, 
                    int* nextn, unsigned int* number, const unsigned short w, 
                    const double h, const unsigned short N, const bool mode);
+
+// get delta function weights for particles in a given column
+void get_delta_col(double* delta, const double* xpc, const double fi, 
+                   const double fj, const double weight, const int m, 
+                   const int k, const int npts, const int w, const int h);
+// spread forces on particles in a given column to local eulerian grid
+void spread_col(double* Fec, const double* delta, const double* flc, 
+                const int i0, const int ipt, const int npts, const int w3);
+// interpolate data around particles in a column to the particles
+void interp_col(const double* Fec, const double* delta, double* flc, 
+                const int i0, const int ipt, const int npts, const int w3);
+
 // implements copy opertion to enforce periodicity of eulerian data before interpolation
 void copy_pbc(double* Fe, const double* Fe_wrap, const unsigned short w, const unsigned int N);
 // implements fold operation to de-ghostify spread data, i.e. enable periodic spread

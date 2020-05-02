@@ -27,9 +27,14 @@ int main(int argc, char* argv[])
 {
 
   // spreading width, num uniform pts on each axis, num particles
-  const unsigned short w = 6, N = w * ((int) 64 / w); 
+  unsigned int w = 6, N = w * ((int) atoi(argv[1]) / w), Nwrap = N; 
   // grid spacing, effective radius, num total columns
-  const double h = 1, Rh = 1.7305 * h, L = h * N; const unsigned int N2 = N * N;
+  const double h = 1, Rh = 1.7305 * h, L = h * N; 
+  
+  // correct N for pbc
+  bool pbc = true;
+  if (pbc) N += w;  
+  const unsigned int N2 = N * N;
   
   // max packing density
   double phimax = 0.5;
@@ -43,51 +48,67 @@ int main(int argc, char* argv[])
   double* fl = (double*) aligned_malloc(Np * 3 * sizeof(double));
 
   // Eulerian force density array (F1,G1,H1,F2,G2,H2,...)
-  double* Fe = (double*) aligned_malloc(N2 * N * 3 * sizeof(double));
+  double *Fe = (double*) aligned_malloc(N2 * N * 3 * sizeof(double)), *Fe_wrap;
+  if (pbc) 
+  {
+    Fe_wrap = (double*) aligned_malloc(Nwrap * Nwrap * Nwrap * 3 * sizeof(double));
+  }
 
   // firstn(i,j) holds index of first particle in column(i,j)
   int* firstn = (int*) aligned_malloc(N2 * sizeof(int));
 
   // number(i,j) holds number of partices in column(i,j)
-  unsigned int* number = (unsigned int*) aligned_malloc(N2 * sizeof(int));
+  unsigned int* number = (unsigned int*) aligned_malloc(N2 * sizeof(unsigned int));
 
   // nextn(i) to hold index of the next particle in the column with particle i
   int* nextn = (int*) aligned_malloc(Np * sizeof(int));
   
-  const bool write = false;
-
   
-  const unsigned int nreps = 10, maxthreads = 12; double Times[maxthreads];
+  const unsigned int nreps = 1, maxthreads = 50; double Times[maxthreads];
   for (unsigned int ithread = 1; ithread <= maxthreads; ++ithread)
   {
     omp_set_num_threads(ithread);
     double times = 0;
     for (unsigned int irep = 0; irep < nreps; ++irep)
     {
+      if (!pbc) init(Np, N, h, xp, fl, Fe, firstn, nextn, number);
+      else init(Np, N, w, h, xp, fl, Fe, firstn, nextn, number);  
       
-      init(Np, N, h, xp, fl, Fe, firstn, nextn, number);
-      
-      double time = omp_get_wtime(); 
-      spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, true);
-      times += omp_get_wtime() - time;      
-
-      if (write)
-      { 
-        write_to_file(xp, Np, "particles.txt"); 
-        write_to_file(Fe, N2 * N, "spread.txt"); 
-        write_coords(N,h,"coords.txt");
-        write_to_file(fl, Np, "forces.txt");
+      double time;
+      if (!pbc) 
+      {
+        time = omp_get_wtime();
+        spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, true);
+        times += omp_get_wtime() - time;
+      }
+      else 
+      {
+        time = omp_get_wtime();
+        spread_interp_pbc(xp, fl, Fe, Fe_wrap, firstn, nextn, number, w, h, N, true);
+        times += omp_get_wtime() - time;
       }
       
       // reinitialize force for interp
       #pragma omp parallel for
       for (unsigned int i = 0; i < Np * 3; ++i) fl[i] = 0;
+      if (pbc)
+      {
+        #pragma omp parallel for
+        for (unsigned int i = 0; i < N2 * N * 3; ++i) {Fe[i] = 0;}
+      }
 
-      time = omp_get_wtime();
-      spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, false);
-      times += omp_get_wtime() - time;      
-      if (write) write_to_file(fl, Np, "interp.txt"); 
-
+      if (!pbc) 
+      {
+        time = omp_get_wtime();
+        spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, false);
+        times += omp_get_wtime() - time;
+      }
+      else  
+      {
+        time = omp_get_wtime();
+        spread_interp_pbc(xp, fl, Fe, Fe_wrap, firstn, nextn, number, w, h, N, false);
+        times += omp_get_wtime() - time;      
+      }
     }
     Times[ithread-1] = times/((double) nreps);
     std::cout << ithread << " " << Times[ithread-1] << std::endl;
@@ -111,8 +132,8 @@ int main(int argc, char* argv[])
   aligned_free(nextn);
   aligned_free(number);
   aligned_free(Fe);
-
-	return 0;
+	if (pbc) aligned_free(Fe_wrap);
+  return 0;
 }
 
  

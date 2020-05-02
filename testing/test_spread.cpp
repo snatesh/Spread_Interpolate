@@ -31,7 +31,7 @@ int main(int argc, char* argv[])
   if (pbc) N += w;  
   // grid spacing, effective radius, num total columns
   const double h = 1; const unsigned int N2 = N * N;
-  
+
   // num particles
   const unsigned int Np = 100; 
 
@@ -105,7 +105,7 @@ int main(int argc, char* argv[])
   aligned_free(nextn);
   aligned_free(number);
   aligned_free(Fe);
-  aligned_free(Fe_wrap);
+  if (pbc) aligned_free(Fe_wrap);
   return 0;
 }
 
