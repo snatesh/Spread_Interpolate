@@ -6,12 +6,37 @@ set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "7.5.0")
-    message(FATAL_ERROR "Insufficient gcc version")
+    message(FATAL_ERROR "Insufficient gcc version. Must be 7.5.0 or greater")
   endif()
 endif()
 
 # make sure we can link to openmp
 find_package(OpenMP REQUIRED)
+
+# add support for FFTW to find_package
+configure_file(cmake.in/download_FindFFTW.cmake.in findFFTW-download/CMakeLists.txt)
+execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+        RESULT_VARIABLE result
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/findFFTW-download )
+if(result)
+    message(FATAL_ERROR "CMake step for findFFTW failed: ${result}")
+    else()
+    message("CMake step for findFFTW completed (${result}).")
+endif()
+execute_process(COMMAND ${CMAKE_COMMAND} --build .
+        RESULT_VARIABLE result
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/findFFTW-download )
+if(result)
+    message(FATAL_ERROR "Build step for findFFTW failed: ${result}")
+endif()
+
+set(findFFTW_DIR ${CMAKE_CURRENT_BINARY_DIR}/findFFTW-src)
+
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${findFFTW_DIR}")
+
+# now find fftw
+find_package(FFTW REQUIRED)
+
 
 # general compiler flags
 option(debug "Build with debugger" ON)
@@ -90,7 +115,7 @@ install(TARGETS test_spread RUNTIME DESTINATION bin/testing)
 
 if (test)
   # Download and unpack googletest at configure time
-  configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
+  configure_file(cmake.in/download_googltest.cmake.in googletest-download/CMakeLists.txt)
   execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
     RESULT_VARIABLE result
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
