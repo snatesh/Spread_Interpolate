@@ -16,11 +16,20 @@ find_package(OpenMP REQUIRED)
 # general compiler flags
 option(debug "Build with debugger" ON)
 option(test "Build all tests" ON)
+option(sepxyz "Separate XYZ" ON)
+
+
 # setting include dir and general compile flags
 if(NOT debug)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Iinclude")
 elseif(debug)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Iinclude -g -DDEBUG")
+endif()
+
+if(sepxyz)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSEPXYZ")
+else()
+  message(STATUS "Not using separate x y z")
 endif()
 
 # include dirs
@@ -34,6 +43,7 @@ set(ioSRC src/io.cpp)
 set(initSRC src/init.cpp)
 set(spreadInterpSRC src/spread_interp.cpp)
 set(benchSRC benchmark/spread_interp_bench.cpp)
+set(benchweakSRC benchmark/spread_interp_bench_weak.cpp)
 set(testSRC testing/test_spread.cpp)
 
 # set build output paths
@@ -60,6 +70,9 @@ add_executable(spread_interp_bench ${benchSRC})
 set_source_files_properties(${benchSRC} PROPERTIES COMPILE_FLAGS "-fopenmp")
 target_link_libraries(spread_interp_bench spreadInterpLib ioLib initLib gomp)
 
+add_executable(spread_interp_bench_weak ${benchweakSRC})
+set_source_files_properties(${benchweakSRC} PROPERTIES COMPILE_FLAGS "-fopenmp")
+target_link_libraries(spread_interp_bench_weak spreadInterpLib ioLib initLib gomp)
   
 # building test
 add_executable(test_spread ${testSRC})
@@ -69,6 +82,7 @@ target_link_libraries(test_spread spreadInterpLib ioLib initLib gomp)
 
 # install benchmark
 install(TARGETS spread_interp_bench RUNTIME DESTINATION bin/benchmark)
+install(TARGETS spread_interp_bench_weak RUNTIME DESTINATION bin/benchmark)
 
 # install exec for test data creation
 install(TARGETS test_spread RUNTIME DESTINATION bin/testing)

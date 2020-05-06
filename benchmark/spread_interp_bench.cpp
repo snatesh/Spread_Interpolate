@@ -11,8 +11,6 @@
 using std::setw;
 using std::setprecision;
 
-#define ALIGN  __attribute__((aligned (MEM_ALIGN)))
-
 /*
   NOTES:
     - if w even, all particles in a column interact 
@@ -40,7 +38,7 @@ int main(int argc, char* argv[])
   double phimax = 0.5;
   // num particles
   const unsigned int Np = (int) (3.0 / 4.0 / M_PI * phimax * pow(L / Rh, 3));
-
+  std::cout << "Spreading and interpolating with " << Np << " particles\n";
   // particle positions (x1,y1,z1,x2,y2,z2,...)
   double* xp = (double*) aligned_malloc(Np * 3 * sizeof(double));
 
@@ -64,11 +62,13 @@ int main(int argc, char* argv[])
   int* nextn = (int*) aligned_malloc(Np * sizeof(int));
   
   
-  const unsigned int nreps = 1, maxthreads = 50; double Times[maxthreads];
+  const unsigned int nreps = 1, maxthreads = 24; 
+  double Times_interp[maxthreads];
+  double Times_spread[maxthreads];
   for (unsigned int ithread = 1; ithread <= maxthreads; ++ithread)
   {
     omp_set_num_threads(ithread);
-    double times = 0;
+    double times_spread = 0, times_interp = 0;
     for (unsigned int irep = 0; irep < nreps; ++irep)
     {
       if (!pbc) init(Np, N, h, xp, fl, Fe, firstn, nextn, number);
@@ -79,14 +79,15 @@ int main(int argc, char* argv[])
       {
         time = omp_get_wtime();
         spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, true);
-        times += omp_get_wtime() - time;
+        times_spread += omp_get_wtime() - time;
       }
       else 
       {
         time = omp_get_wtime();
         spread_interp_pbc(xp, fl, Fe, Fe_wrap, firstn, nextn, number, w, h, N, true);
-        times += omp_get_wtime() - time;
+        times_spread += omp_get_wtime() - time;
       }
+      Times_spread[ithread-1] = times_spread/((double) nreps);
       
       // reinitialize force for interp
       #pragma omp parallel for
@@ -101,30 +102,37 @@ int main(int argc, char* argv[])
       {
         time = omp_get_wtime();
         spread_interp(xp, fl, Fe, firstn, nextn, number, w, h, N, false);
-        times += omp_get_wtime() - time;
+        times_interp += omp_get_wtime() - time;
       }
       else  
       {
         time = omp_get_wtime();
         spread_interp_pbc(xp, fl, Fe, Fe_wrap, firstn, nextn, number, w, h, N, false);
-        times += omp_get_wtime() - time;      
+        times_interp += omp_get_wtime() - time;      
       }
     }
-    Times[ithread-1] = times/((double) nreps);
-    std::cout << ithread << " " << Times[ithread-1] << std::endl;
+    Times_interp[ithread-1] = times_interp/((double) nreps);
+    std::cout << ithread << " " << Times_spread[ithread-1] 
+              << " " << Times_interp[ithread-1] << std::endl;
   }
-  std::ofstream file; file.open("Times.txt");
-  if (file.is_open())
+  std::stringstream ss;
+  ss << "Times_spread_N" << N << ".txt";
+  std::ofstream file_spread; file_spread.open(ss.str());
+  ss.str(""); ss << "Times_interp_N" << N << ".txt";
+  std::ofstream file_interp; file_interp.open(ss.str());
+  if (file_spread.is_open() && file_interp.is_open())
   {
     for (unsigned int ithread = 1; ithread <= maxthreads; ++ithread)
     {
-      file << setprecision(16) << Times[ithread-1] << std::endl;
+      file_spread << setprecision(16) << Times_spread[ithread-1] << std::endl;
+      file_interp << setprecision(16) << Times_interp[ithread-1] << std::endl;
     }
-    file.close();
+    file_spread.close();
+    file_interp.close();
   }
   else
   {
-    std::cout << "Unable to open file Times.txt" << std::endl;
+    std::cout << "Unable to open file" << std::endl;
   }
   aligned_free(xp);
   aligned_free(fl);

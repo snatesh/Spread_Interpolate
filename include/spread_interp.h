@@ -46,6 +46,7 @@ inline unsigned int const pbat(int i, int j, int k, const int Nx, const int Ny, 
   return i + Nx * (j + Ny * k);
 }
 
+
 // gather data from src at inds into trg
 inline void gather(unsigned int N, double* trg, double const* src, const unsigned int* inds)
 {
@@ -58,6 +59,7 @@ inline void gather(unsigned int N, double* trg, double const* src, const unsigne
   }
 }
 
+
 // scatter data from trg into src at inds
 inline void scatter(unsigned int N, double const* trg, double* src, const unsigned int* inds)
 {
@@ -67,6 +69,31 @@ inline void scatter(unsigned int N, double const* trg, double* src, const unsign
     src[3 * inds[i]] = trg[3 * i];
     src[1 + 3 * inds[i]] = trg[1 + 3 * i];
     src[2 + 3 * inds[i]] = trg[2 + 3 * i];
+  }
+}
+
+inline void gather(unsigned int N, double* trgx, double* trgy, double* trgz, 
+                   double const* src, const unsigned int* inds)
+{
+  #pragma omp simd
+  for (unsigned int i = 0; i < N; ++i) 
+  {
+    trgx[i] = src[3 * inds[i]];
+    trgy[i] = src[1 + 3 * inds[i]];
+    trgz[i] = src[2 + 3 * inds[i]];
+  }
+}
+
+// scatter data from trg into src at inds
+inline void scatter(unsigned int N, double const* trgx, double const* trgy, 
+                    double const* trgz, double* src, const unsigned int* inds)
+{
+  #pragma omp simd
+  for (unsigned int i = 0; i < N; ++i) 
+  {
+    src[3 * inds[i]] = trgx[i];
+    src[1 + 3 * inds[i]] = trgy[i];
+    src[2 + 3 * inds[i]] = trgz[i];
   }
 }
 
@@ -82,9 +109,9 @@ void spread_interp(double* xp, double* fl, double* Fe, int* firstn,
 void spread_interp_pbc(double* xp, double* fl, double* Fe, double* Fe_wrap, int* firstn, 
                    int* nextn, unsigned int* number, const unsigned short w, 
                    const double h, const unsigned short N, const bool mode);
-
+#ifndef SEPXYZ
 // get delta function weights for particles in a given column
-void get_delta_col(double* delta, const double* xpc, const double fi, 
+void delta_col(double* delta, const double* xpc, const double fi, 
                    const double fj, const double weight, const int m, 
                    const int k, const int npts, const int w, const int h);
 // spread forces on particles in a given column to local eulerian grid
@@ -93,6 +120,26 @@ void spread_col(double* Fec, const double* delta, const double* flc,
 // interpolate data around particles in a column to the particles
 void interp_col(const double* Fec, const double* delta, double* flc, 
                 const int i0, const int ipt, const int npts, const int w3);
+#else
+// get delta function weights for particles in a given column
+void delta_col(double* delta, const double* xpc, const double* ypc,
+                   const double* zpc, const double fi, const double fj, 
+                   const double weight, const int m, const int k, const int npts, 
+                   const int w, const int w3, const int h);
+void delta_col(double* delta, const double* x, const double* y,
+               const double* z, const double weight, const int w3);
+void delta_col1(double* x, const int w3);
+void delta_col2(double* x, const int w3);
+void delta_col3(double* x, const int w3);
+// spread forces on particles in a given column to local eulerian grid
+void spread_col(double* Fec, double* Gec, double* Hec, const double* delta, 
+                const double flc, const double glc, const double hlc,
+                const int w3);
+// interpolate data around particles in a column to the particles
+void interp_col(const double* Fec, const double* Gec, const double* Hec,
+                const double* delta, double* flc, double* glc, double* hlc,
+                const int ipt, const int w3);
+#endif
 
 // implements copy opertion to enforce periodicity of eulerian data before interpolation
 void copy_pbc(double* Fe, const double* Fe_wrap, const unsigned short w, const unsigned int N);
