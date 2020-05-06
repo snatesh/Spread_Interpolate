@@ -21,9 +21,9 @@ option(sepxyz "Separate XYZ" ON)
 
 # setting include dir and general compile flags
 if(NOT debug)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Iinclude")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Iinclude -march=native")
 elseif(debug)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Iinclude -g -DDEBUG")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Iinclude -g -DDEBUG -march=native")
 endif()
 
 if(sepxyz)
@@ -52,7 +52,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # building lib
 add_library(spreadInterpLib STATIC ${spreadInterpSRC})
-set_source_files_properties(${spreadInterpSRC} PROPERTIES COMPILE_FLAGS "-Ofast -ftree-vectorize -fopt-info -mavx -fopenmp")
+set_source_files_properties(${spreadInterpSRC} PROPERTIES COMPILE_FLAGS "-Ofast -ftree-vectorize -fopt-info -fopenmp")
 add_library(ioLib STATIC ${ioSRC})
 set_source_files_properties(${ioSRC} PROPERTIES COMPILE_FLAGS "-Ofast -ftree-vectorize")
 add_library(initLib STATIC ${initSRC})

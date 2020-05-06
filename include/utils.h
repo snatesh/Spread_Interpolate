@@ -6,12 +6,12 @@
 #include <stdlib.h>
 #include <iostream>
 
-#ifdef __SSE2__
-  #define MEM_ALIGN 16
+#if defined(__MIC__)
+  #define MEM_ALIGN 64
 #elif __AVX__
   #define MEM_ALIGN 32
-#elif defined(__MIC__)
-  #define MEM_ALIGN 64
+#elif __SSE2__
+  #define MEM_ALIGN 16
 #endif
 
 class Timer {

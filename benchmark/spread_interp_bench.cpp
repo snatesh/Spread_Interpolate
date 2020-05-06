@@ -62,7 +62,7 @@ int main(int argc, char* argv[])
   int* nextn = (int*) aligned_malloc(Np * sizeof(int));
   
   
-  const unsigned int nreps = 1, maxthreads = 24; 
+  const unsigned int nreps = 1, maxthreads = 6; 
   double Times_interp[maxthreads];
   double Times_spread[maxthreads];
   for (unsigned int ithread = 1; ithread <= maxthreads; ++ithread)
