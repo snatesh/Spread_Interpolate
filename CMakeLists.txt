@@ -70,6 +70,7 @@ set(spreadInterpSRC src/spread_interp.cpp)
 set(benchSRC benchmark/spread_interp_bench.cpp)
 set(benchweakSRC benchmark/spread_interp_bench_weak.cpp)
 set(testSRC testing/test_spread.cpp)
+set(c2cTestSRC testing/fft_c2c_3D.cpp)
 
 # set build output paths
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -104,6 +105,10 @@ add_executable(test_spread ${testSRC})
 set_source_files_properties(${testSRC} PROPERTIES COMPILE_FLAGS "-fopenmp")
 target_link_libraries(test_spread spreadInterpLib ioLib initLib gomp)
 
+# fftw c2c
+add_executable(fft_c2c ${c2cTestSRC})
+set_source_files_properties(${c2cTestSRC} PROPERTIES COMPILE_FLAGS "-lfftw3 -lm -fopenmp")
+target_link_libraries(fft_c2c fftw3 fftw3_omp gomp)
 
 # install benchmark
 install(TARGETS spread_interp_bench RUNTIME DESTINATION bin/benchmark)
@@ -111,6 +116,7 @@ install(TARGETS spread_interp_bench_weak RUNTIME DESTINATION bin/benchmark)
 
 # install exec for test data creation
 install(TARGETS test_spread RUNTIME DESTINATION bin/testing)
+install(TARGETS fft_c2c RUNTIME DESTINATION bin/testing)
 
 
 if (test)

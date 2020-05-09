@@ -445,7 +445,6 @@ inline void fold_pbc(double* Fe, double* Fe_wrap, const unsigned short w, const 
     {
       for (unsigned int j = lend; j < rbeg; ++j)
       {
-        //#pragma omp simd aligned(Fe, Fe_wrap: MEM_ALIGN)
         for (unsigned int i = lend; i < rbeg; ++i)
         {
           unsigned int ii = i - lend, jj = j - lend, kk = k - lend;
