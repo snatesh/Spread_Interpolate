@@ -25,12 +25,12 @@ int main(int argc, char* argv[])
 {
 
   // spreading width, num uniform pts on each axis, num particles
-  unsigned short w = 6, N = w * ((int) 64 / w), Nwrap = N;
+  unsigned short w = 6, N = atoi(argv[1]), Nwrap = N;
   // grid spacing, effective radius, num total columns
   const double h = 1, Rh = 1.7305 * h, L = h * N; 
   
   // correct N for pbc
-  const bool write = false;
+  const bool write = true;
   const bool pbc = true;
   if (pbc) N += w;  
   const unsigned int N2 = N * N;
@@ -38,7 +38,8 @@ int main(int argc, char* argv[])
   // max packing density
   double phimax = 0.5;
   // num particles
-  const unsigned int Np = (int) (3.0 / 4.0 / M_PI * phimax * pow(L / Rh, 3));
+  //const unsigned int Np = (int) (3.0 / 4.0 / M_PI * phimax * pow(L / Rh, 3));
+  const unsigned int Np = atoi(argv[2]);
 
   // particle positions (x1,y1,z1,x2,y2,z2,...)
   double* xp = (double*) aligned_malloc(Np * 3 * sizeof(double));

@@ -77,7 +77,7 @@ TEST_F(SpreadTest, SpreadAndInterpNoPBC)
   spread_interp(xp, fl, Fe_test, firstn, nextn, number, w, h, N, true);
   for (unsigned int i = 0; i < N * N * N * 3; ++i)
   {
-    ASSERT_LT(fabs(Fe_test[i]-Fe[i]),1e-15)
+    ASSERT_LT(fabs(Fe_test[i]-Fe[i]),1e-13)
       << "spread value differs at index " << i 
       << " by " << fabs(Fe_test[i]-Fe[i]); 
   } 
@@ -86,7 +86,7 @@ TEST_F(SpreadTest, SpreadAndInterpNoPBC)
   spread_interp(xp, flinterp_test, Fe_test, firstn, nextn, number, w, h, N, false);
   for (unsigned int i = 0; i < 3 * Np; ++i)
   {
-    ASSERT_LT(fabs(flinterp_test[i]-flinterp[i]),1e-15)
+    ASSERT_LT(fabs(flinterp_test[i]-flinterp[i]),1e-13)
       << "interpolated value differs at index " << i
       << " by " << fabs(flinterp_test[i]-flinterp[i]);
   } 

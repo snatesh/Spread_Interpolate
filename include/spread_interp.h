@@ -6,11 +6,7 @@
 #include<iostream>
 #endif
 
-#if defined(__MIC__)
-  #define MEM_ALIGN 64
-#elif __AVX__
-  #define MEM_ALIGN 32
-#elif __SSE2__
+#ifndef MEM_ALIGN
   #define MEM_ALIGN 16
 #endif
 

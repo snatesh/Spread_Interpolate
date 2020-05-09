@@ -6,13 +6,8 @@
 #include <stdlib.h>
 #include <iostream>
 
-#if defined(__MIC__)
-  #define MEM_ALIGN 64
-#elif __AVX__
-  #define MEM_ALIGN 32
-#elif __SSE2__
-  #define MEM_ALIGN 16
-#endif
+
+#define MEM_ALIGN 16
 
 class Timer {
   public:

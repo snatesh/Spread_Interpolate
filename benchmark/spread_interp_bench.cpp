@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
 {
 
   // spreading width, num uniform pts on each axis, num particles
-  unsigned int w = 6, N = w * ((int) atoi(argv[1]) / w), Nwrap = N; 
+  unsigned int w = 6, N = atoi(argv[1]), Nwrap = N; 
   // grid spacing, effective radius, num total columns
   const double h = 1, Rh = 1.7305 * h, L = h * N; 
   
